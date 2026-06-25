@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Monitor Riesgo Vial — Perú</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+/* ── TOKENS ────────────────────────────────────────────────────────────────── */
+:root {
+  --bg:       #060B14;
+  --surface:  #0D1526;
+  --surface2: #132038;
+  --border:   #1C2E4A;
+  --border2:  #243550;
+  --text:     #E2EAF4;
+  --muted:    #5B7494;
+  --cyan:     #00D4FF;
+  --cyan-dim: rgba(0,212,255,.12);
+  --red:      #FF3B5C;
+  --red-dim:  rgba(255,59,92,.12);
+  --orange:   #FF8C00;
+  --orng-dim: rgba(255,140,0,.12);
+  --green:    #00E676;
+  --grn-dim:  rgba(0,230,118,.12);
+  --font-hd:  'Space Grotesk', sans-serif;
+  --font-bd:  'Inter', sans-serif;
+  --font-mn:  'JetBrains Mono', monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--font-bd)}
+a{color:inherit;text-decoration:none}
+button{cursor:pointer;font-family:inherit}
+
+/* ── SCROLLBAR ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+
+/* ── LAYOUT ────────────────────────────────────────────────────────────────── */
+.app{display:flex;flex-direction:column;height:100vh}
+
+/* ── HEADER ────────────────────────────────────────────────────────────────── */
+.hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;height:52px;flex-shrink:0;
+  background:var(--surface);border-bottom:1px solid var(--border);
+  position:relative;z-index:1000;
+}
+.hdr-brand{display:flex;align-items:center;gap:12px}
+.radar{
+  position:relative;width:32px;height:32px;
+}
+.radar-ring{
+  position:absolute;inset:0;border-radius:50%;
+  border:1.5px solid var(--cyan);
+  animation:radar-expand 2s ease-out infinite;
+}
+.radar-ring:nth-child(2){animation-delay:.6s}
+.radar-ring:nth-child(3){animation-delay:1.2s}
+.radar-dot{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:6px;height:6px;border-radius:50%;
+  background:var(--cyan);box-shadow:0 0 8px var(--cyan);
+}
+@keyframes radar-expand{
+  0%{transform:scale(.2);opacity:1}
+  100%{transform:scale(1.6);opacity:0}
+}
+.hdr-title{font-family:var(--font-hd);font-size:15px;font-weight:700;letter-spacing:-.3px}
+.hdr-title span{color:var(--cyan)}
+.live-pill{
+  font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;
+  color:var(--red);background:var(--red-dim);
+  border:1px solid rgba(255,59,92,.3);
+  padding:3px 8px;border-radius:20px;
+  display:flex;align-items:center;gap:5px;
+}
+.live-dot{width:5px;height:5px;border-radius:50%;background:var(--red);animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.hdr-right{display:flex;align-items:center;gap:10px}
+#last-upd{font-size:10px;color:var(--muted);font-family:var(--font-mn);display:none}
+.btn-refresh{
+  font-size:11px;font-weight:600;
+  background:var(--cyan-dim);border:1px solid rgba(0,212,255,.3);
+  color:var(--cyan);padding:6px 12px;border-radius:6px;
+  transition:background .15s;
+}
+.btn-refresh:hover{background:rgba(0,212,255,.2)}
+.btn-refresh:disabled{opacity:.4;cursor:default}
+
+/* ── TABS ──────────────────────────────────────────────────────────────────── */
+.tabs{
+  display:flex;gap:0;flex-shrink:0;
+  background:var(--surface);border-bottom:1px solid var(--border);
+  padding:0 20px;
+}
+.tab{
+  padding:10px 18px;font-size:12px;font-weight:600;
+  color:var(--muted);border-bottom:2px solid transparent;
+  transition:color .15s,border-color .15s;letter-spacing:.2px;
+  cursor:pointer;
+}
+.tab:hover{color:var(--text)}
+.tab.on{color:var(--cyan);border-bottom-color:var(--cyan)}
+
+/* ── VIEWS ─────────────────────────────────────────────────────────────────── */
+.view{display:none;flex:1;min-height:0;overflow:hidden}
+.view.on{display:flex}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   VIEW 1 — MAPA PERU COMPLETO
+══════════════════════════════════════════════════════════════════════════════ */
+#v-peru{flex-direction:row}
+@media(max-width:680px){#v-peru{flex-direction:column}}
+
+/* Sidebar */
+.sb{
+  width:280px;flex-shrink:0;
+  background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+@media(max-width:680px){.sb{width:100%;border-right:none;border-bottom:1px solid var(--border);max-height:42vh}}
+
+.sb-top{padding:10px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column;gap:6px}
+
+/* Búsqueda */
+.search-wrap{
+  display:flex;align-items:center;gap:8px;
+  background:var(--bg);border:1px solid var(--border2);border-radius:7px;
+  padding:7px 10px;
+}
+.search-wrap svg{flex-shrink:0;color:var(--muted)}
+.search-wrap input{
+  flex:1;background:transparent;border:none;outline:none;
+  color:var(--text);font-size:12px;font-family:var(--font-bd);
+}
+.search-wrap input::placeholder{color:var(--muted)}
+
+/* Filtros */
+.filters{display:flex;gap:5px;flex-wrap:wrap}
+.flt{
+  font-size:10px;font-weight:600;padding:4px 10px;border-radius:14px;
+  background:transparent;border:1px solid var(--border2);
+  color:var(--muted);transition:all .15s;letter-spacing:.3px;text-transform:uppercase;
+}
+.flt:hover{border-color:var(--cyan);color:var(--text)}
+.flt.on-all{background:var(--cyan-dim);border-color:var(--cyan);color:var(--cyan)}
+.flt.on-alto{background:var(--red-dim);border-color:var(--red);color:var(--red)}
+.flt.on-medio{background:var(--orng-dim);border-color:var(--orange);color:var(--orange)}
+.flt.on-bajo{background:var(--grn-dim);border-color:var(--green);color:var(--green)}
+
+/* Stats */
+.sb-stats{display:flex;gap:6px;padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
+.stat{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:7px;text-align:center}
+.stat-n{font-family:var(--font-hd);font-size:20px;font-weight:700}
+.stat-l{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.n-alto{color:var(--red)}.n-medio{color:var(--orange)}.n-bajo{color:var(--green)}
+
+/* Lista */
+#clist{overflow-y:auto;flex:1;padding:8px}
+.card{
+  background:var(--bg);border:1px solid var(--border);border-radius:9px;
+  padding:11px 13px;margin-bottom:6px;cursor:pointer;
+  transition:border-color .15s,transform .1s;
+  position:relative;overflow:hidden;
+}
+.card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2.5px;border-radius:3px 0 0 3px}
+.card.ALTO::before{background:var(--red)}
+.card.MEDIO::before{background:var(--orange)}
+.card.BAJO::before{background:var(--green)}
+.card.loading::before{background:var(--muted)}
+.card:hover{border-color:var(--cyan);transform:translateX(2px)}
+.card.sel{border-color:var(--cyan);background:var(--cyan-dim)}
+.c-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.c-cod{font-family:var(--font-hd);font-size:13px;font-weight:700}
+.badge{font-size:9px;font-weight:700;padding:2px 7px;border-radius:12px;text-transform:uppercase;letter-spacing:.4px}
+.b-ALTO{background:var(--red-dim);color:var(--red);border:1px solid rgba(255,59,92,.3)}
+.b-MEDIO{background:var(--orng-dim);color:var(--orange);border:1px solid rgba(255,140,0,.3)}
+.b-BAJO{background:var(--grn-dim);color:var(--green);border:1px solid rgba(0,230,118,.3)}
+.b-load{background:rgba(91,116,148,.15);color:var(--muted);border:1px solid var(--border)}
+.c-desc{font-size:10px;color:var(--muted);margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.c-row{display:flex;gap:10px;font-size:10px;color:var(--muted);font-family:var(--font-mn)}
+.c-chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px;padding-top:5px;border-top:1px solid var(--border)}
+.chip{font-size:9px;padding:2px 6px;border-radius:8px;background:var(--surface2);color:var(--muted)}
+.no-res{text-align:center;padding:24px;color:var(--muted);font-size:12px}
+
+/* Mapa Perú */
+.map-wrap{flex:1;position:relative;min-height:0}
+#map-peru{height:100%}
+
+/* LEAFLET overrides */
+.leaflet-container{background:#060B14!important}
+.leaflet-popup-content-wrapper{
+  background:var(--surface)!important;border:1px solid var(--border)!important;
+  border-radius:11px!important;color:var(--text)!important;
+  box-shadow:0 8px 32px rgba(0,0,0,.7)!important;padding:0!important;
+}
+.leaflet-popup-tip{background:var(--surface)!important}
+.leaflet-popup-content{margin:0!important;width:270px!important}
+
+/* Popup */
+.pu{padding:15px}
+.pu-cod{font-family:var(--font-hd);font-size:18px;font-weight:700;margin-bottom:2px}
+.pu-desc{font-size:11px;color:var(--muted);margin-bottom:10px}
+.pu-nivel{
+  font-size:11px;font-weight:700;padding:6px 12px;border-radius:7px;
+  text-align:center;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;
+}
+.pn-ALTO{background:var(--red-dim);color:var(--red)}
+.pn-MEDIO{background:var(--orng-dim);color:var(--orange)}
+.pn-BAJO{background:var(--grn-dim);color:var(--green)}
+.pu-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px}
+.pu-item{background:var(--bg);border-radius:7px;padding:7px 9px}
+.pu-lbl{font-size:9px;color:var(--muted);margin-bottom:2px;text-transform:uppercase;letter-spacing:.4px}
+.pu-val{font-size:13px;font-weight:600;font-family:var(--font-mn)}
+.pu-div{border:none;border-top:1px solid var(--border);margin:8px 0}
+.pu-sec{font-size:9px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.pu-chips{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px}
+.pu-chip{font-size:10px;padding:3px 7px;background:var(--bg);border-radius:9px;color:var(--muted);border:1px solid var(--border)}
+
+/* Histórico expandible */
+.hist-toggle{
+  width:100%;background:var(--surface2);border:1px solid var(--border);
+  color:var(--cyan);font-size:11px;font-weight:600;
+  padding:8px;border-radius:7px;transition:background .15s;margin-bottom:6px;
+}
+.hist-toggle:hover{background:var(--cyan-dim)}
+.hist-body{display:none}
+.hist-body.open{display:block}
+.hist-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:5px 0;border-bottom:1px solid var(--border);font-size:10px;
+}
+.hist-row:last-child{border-bottom:none}
+.hist-key{color:var(--muted)}
+.hist-val{font-family:var(--font-mn);font-weight:600}
+
+/* Leyenda */
+.legend{
+  position:absolute;bottom:20px;right:12px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:9px;padding:11px 13px;z-index:900;
+  font-size:11px;box-shadow:0 4px 20px rgba(0,0,0,.5);min-width:150px;
+}
+.leg-title{font-weight:700;margin-bottom:7px;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+.leg-row{display:flex;align-items:center;gap:7px;margin-bottom:4px;font-size:10px}
+.leg-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.leg-model{
+  margin-top:8px;padding-top:7px;border-top:1px solid var(--border);
+  font-size:9px;color:var(--muted);line-height:1.6;font-family:var(--font-mn);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   VIEW 2 — CAMARAS LIMA
+══════════════════════════════════════════════════════════════════════════════ */
+#v-lima{flex-direction:column;overflow:hidden}
+
+.lima-hdr{
+  padding:10px 16px;background:var(--surface);
+  border-bottom:1px solid var(--border);flex-shrink:0;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+}
+.lima-hdr h2{font-family:var(--font-hd);font-size:14px;font-weight:700}
+.lima-hdr p{font-size:10px;color:var(--muted)}
+.cam-legend{
+  display:flex;gap:10px;align-items:center;font-size:10px;color:var(--muted)
+}
+.cam-legend span{display:flex;align-items:center;gap:4px}
+
+.lima-body{display:flex;flex:1;min-height:0;overflow:hidden}
+
+/* Mapa Lima */
+.lima-map-wrap{flex:1;position:relative;min-height:0}
+#map-lima{height:100%}
+
+/* Panel cámaras */
+.cam-panel{
+  width:300px;flex-shrink:0;
+  background:var(--surface);border-left:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+@media(max-width:900px){
+  .lima-body{flex-direction:column}
+  .cam-panel{width:100%;border-left:none;border-top:1px solid var(--border);max-height:45vh}
+}
+.cam-panel-hdr{
+  padding:10px 12px;border-bottom:1px solid var(--border);flex-shrink:0;
+  font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.cam-list{overflow-y:auto;flex:1;padding:8px;display:flex;flex-direction:column;gap:6px}
+
+.cam-card{
+  background:var(--bg);border:1px solid var(--border);border-radius:9px;
+  overflow:hidden;transition:border-color .15s;
+}
+.cam-card:hover{border-color:var(--red)}
+
+/* Video embed area */
+.cam-video{position:relative;padding-top:56.25%;background:#000;overflow:hidden;cursor:pointer}
+.cam-video iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:none}
+.cam-overlay{
+  position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(6,11,20,.9),rgba(13,21,38,.95));
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+  transition:background .2s;
+}
+.cam-overlay:hover .play-btn{background:var(--red)}
+.play-btn{
+  width:44px;height:44px;border-radius:50%;
+  background:rgba(255,59,92,.8);
+  display:flex;align-items:center;justify-content:center;
+  transition:background .15s;
+  box-shadow:0 0 20px rgba(255,59,92,.4);
+}
+.play-btn svg{margin-left:3px}
+.overlay-txt{font-size:10px;color:var(--muted);text-align:center;padding:0 12px;line-height:1.5}
+.overlay-name{font-weight:600;color:var(--text);font-size:11px;margin-bottom:2px}
+
+.cam-info{padding:8px 10px}
+.cam-name{font-size:11px;font-weight:600;margin-bottom:2px}
+.cam-dist{font-size:10px;color:var(--muted);display:flex;align-items:center;gap:4px}
+.cam-badge{
+  display:inline-block;
+  background:var(--red-dim);color:var(--red);
+  border:1px solid rgba(255,59,92,.3);
+  font-size:8px;font-weight:700;padding:1px 6px;border-radius:10px;
+  text-transform:uppercase;margin-top:4px;
+}
+
+/* Aviso */
+.cam-aviso{
+  padding:8px 12px;background:var(--orng-dim);border-bottom:1px solid rgba(255,140,0,.2);
+  font-size:10px;color:var(--orange);flex-shrink:0;line-height:1.5;
+}
+
+/* TOAST */
+#toast{
+  position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
+  background:var(--surface2);color:var(--text);
+  padding:8px 16px;border-radius:20px;font-size:11px;
+  z-index:9999;opacity:0;transition:opacity .2s;
+  pointer-events:none;white-space:nowrap;border:1px solid var(--border2);
+}
+#toast.show{opacity:1}
+
+/* LOADING */
+#loading{
+  position:fixed;inset:0;background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  z-index:9998;gap:16px;
+}
+#loading.hide{display:none}
+.spin{
+  width:36px;height:36px;border-radius:50%;
+  border:2px solid var(--border2);border-top-color:var(--cyan);
+  animation:spin .7s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+#load-txt{font-size:12px;color:var(--muted);font-family:var(--font-mn)}
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spin"></div>
+  <div id="load-txt">Inicializando sistema...</div>
+</div>
+
+<div class="app">
+
+  <!-- HEADER -->
+  <header class="hdr">
+    <div class="hdr-brand">
+      <div class="radar">
+        <div class="radar-ring"></div>
+        <div class="radar-ring"></div>
+        <div class="radar-ring"></div>
+        <div class="radar-dot"></div>
+      </div>
+      <div>
+        <div class="hdr-title">Monitor Riesgo Vial <span>Perú</span></div>
+      </div>
+      <div class="live-pill"><span class="live-dot"></span>En vivo</div>
+    </div>
+    <div class="hdr-right">
+      <div id="last-upd"></div>
+      <button class="btn-refresh" id="btn-ref" onclick="cargarDatos()">↻ Actualizar</button>
+    </div>
+  </header>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <div class="tab on" onclick="switchTab('peru')">🗺 Perú — Todas las carreteras</div>
+    <div class="tab" onclick="switchTab('lima')">📷 Lima — Cámaras Claro 5G</div>
+  </div>
+
+  <!-- VIEW PERU -->
+  <div class="view on" id="v-peru">
+    <aside class="sb">
+      <div class="sb-top">
+        <div class="search-wrap">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" id="buscador" placeholder="Buscar carretera, región..." oninput="filtrar()" autocomplete="off">
+        </div>
+        <div class="filters">
+          <button class="flt on-all" onclick="setFiltro('TODOS')">Todos</button>
+          <button class="flt" onclick="setFiltro('ALTO')">🔴 Alto</button>
+          <button class="flt" onclick="setFiltro('MEDIO')">🟠 Medio</button>
+          <button class="flt" onclick="setFiltro('BAJO')">🟢 Bajo</button>
+        </div>
+      </div>
+      <div class="sb-stats">
+        <div class="stat"><div class="stat-n n-alto" id="cnt-a">–</div><div class="stat-l">Alto</div></div>
+        <div class="stat"><div class="stat-n n-medio" id="cnt-m">–</div><div class="stat-l">Medio</div></div>
+        <div class="stat"><div class="stat-n n-bajo" id="cnt-b">–</div><div class="stat-l">Bajo</div></div>
+      </div>
+      <div id="clist"></div>
+    </aside>
+    <div class="map-wrap">
+      <div id="map-peru"></div>
+      <div class="legend">
+        <div class="leg-title">Nivel de riesgo</div>
+        <div class="leg-row"><div class="leg-dot" style="background:var(--red)"></div>Alto</div>
+        <div class="leg-row"><div class="leg-dot" style="background:var(--orange)"></div>Medio</div>
+        <div class="leg-row"><div class="leg-dot" style="background:var(--green)"></div>Bajo</div>
+        <div class="leg-model" id="leg-model">Cargando modelo...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW LIMA -->
+  <div class="view" id="v-lima">
+    <div class="cam-aviso">
+      ⚠️ 📡 Cámaras <span style="color:var(--green);font-weight:600">SkylineWebcams</span> se cargan aquí directamente. Cámaras <span style="color:var(--red);font-weight:600">Claro 5G</span> abren en nueva pestaña (bloquean embeds por seguridad). Ambas muestran tráfico en tiempo real.
+    </div>
+    <div class="lima-hdr">
+      <div>
+        <h2>Lima Metropolitana — Tráfico en Vivo</h2>
+        <p>7 puntos de monitoreo · Red 5G Claro Perú · Miraflores, Surco, Lince, Surquillo, Pueblo Libre</p>
+      </div>
+    </div>
+    <div class="lima-body">
+      <div class="lima-map-wrap">
+        <div id="map-lima"></div>
+      </div>
+      <div class="cam-panel">
+        <div class="cam-panel-hdr">
+          <span>📷 Cámaras disponibles</span>
+          <span style="color:var(--red);font-family:var(--font-mn)">7 activas</span>
+        </div>
+        <div class="cam-list" id="cam-list"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════════
+const OW_KEY     = "d2f17384917cd841afe2555dd647b114";
+const TT_KEY     = "UCidy05ZxCGeq6LP3xkk41yGqap7fr0p";
+const MODELO_URL = "./modelo_export.json";
+
+// Carreteras monitoreadas con coordenadas
+const CARRETERAS = [
+  { cod:"PE-1N",  lat:-8.1116,  lon:-79.0282, desc:"Lima → Trujillo → Piura",  depto:"LA LIBERTAD" },
+  { cod:"PE-1S",  lat:-12.0464, lon:-77.0428, desc:"Lima → Ica → Arequipa",    depto:"LIMA" },
+  { cod:"PE-3S",  lat:-13.5170, lon:-71.9785, desc:"Cusco → Puno",             depto:"CUSCO" },
+  { cod:"PE-3N",  lat:-9.9306,  lon:-76.2422, desc:"Huánuco → Tingo María",    depto:"JUNIN" },
+  { cod:"PE-5N",  lat:-9.0766,  lon:-78.5780, desc:"Chimbote → Huaraz",        depto:"ANCASH" },
+  { cod:"PE-34A", lat:-11.9925, lon:-76.8417, desc:"Lima Este → La Oroya",     depto:"LIMA" },
+  { cod:"PE-22",  lat:-11.9775, lon:-76.9722, desc:"Lima → Ica (Variante)",    depto:"LIMA" },
+  { cod:"PE-1NJ", lat:-11.8000, lon:-76.9500, desc:"Rampa Javier Prado",       depto:"LIMA" },
+];
+
+
+const COLS = { ALTO:"#FF3B5C", MEDIO:"#FF8C00", BAJO:"#00E676", "?":"#5B7494" };
+
+// ═══════════════════════════════════════════════════════════════
+// CAMARAS LIMA — fuentes verificadas
+// ═══════════════════════════════════════════════════════════════
+// SkylineWebcams tiene subdominio embed.skylinewebcams.com
+// para embeber sus cámaras directamente en iframes.
+// IDs verificados de sus cámaras en Lima.
+// Las de Claro se muestran como enlace externo (bloquea iframes).
+const CAMARAS = [
+  {
+    id:"C1",
+    nombre:"Av. Javier Prado — Óvalo Monitor Huascar",
+    lat:-12.0884, lon:-77.0295,
+    dist:"Surco / San Isidro",
+    tipo:"skyline",
+    embed:"https://embed.skylinewebcams.com/cam/1914.html",
+    link:"https://www.skylinewebcams.com/es/webcam/peru/lima/lima/avenue-javier-prado.html",
+    fuente:"SkylineWebcams"
+  },
+  {
+    id:"C2",
+    nombre:"Lima — Miraflores (Óvalo Miraflores)",
+    lat:-12.1200, lon:-77.0282,
+    dist:"Miraflores",
+    tipo:"skyline",
+    embed:"https://embed.skylinewebcams.com/cam/1397.html",
+    link:"https://www.skylinewebcams.com/es/webcam/peru/lima/lima/miraflores.html",
+    fuente:"SkylineWebcams"
+  },
+  {
+    id:"C3",
+    nombre:"Av. República de Panamá cdra 39",
+    lat:-12.1186, lon:-77.0200,
+    dist:"Surquillo",
+    tipo:"claro",
+    embed:null,
+    link:"https://www.claro.com.pe/traficoenvivo/",
+    fuente:"Claro 5G"
+  },
+  {
+    id:"C4",
+    nombre:"Av. Angamos Oeste cdra 20",
+    lat:-12.1138, lon:-77.0186,
+    dist:"Surquillo",
+    tipo:"claro",
+    embed:null,
+    link:"https://www.claro.com.pe/traficoenvivo/",
+    fuente:"Claro 5G"
+  },
+  {
+    id:"C5",
+    nombre:"Av. Javier Prado Oeste cdra 45",
+    lat:-12.0884, lon:-77.0295,
+    dist:"Santiago de Surco",
+    tipo:"claro",
+    embed:null,
+    link:"https://www.claro.com.pe/traficoenvivo/",
+    fuente:"Claro 5G"
+  },
+  {
+    id:"C6",
+    nombre:"Av. La Marina cdra 7",
+    lat:-12.0766, lon:-77.0839,
+    dist:"Pueblo Libre",
+    tipo:"claro",
+    embed:null,
+    link:"https://www.claro.com.pe/traficoenvivo/",
+    fuente:"Claro 5G"
+  },
+  {
+    id:"C7",
+    nombre:"Av. Paseo de la República 1786",
+    lat:-12.0852, lon:-77.0360,
+    dist:"Lince",
+    tipo:"claro",
+    embed:null,
+    link:"https://www.claro.com.pe/traficoenvivo/",
+    fuente:"Claro 5G"
+  },
+  {
+    id:"C8",
+    nombre:"Av. Del Ejército 1241",
+    lat:-12.1189, lon:-77.0301,
+    dist:"Miraflores",
+    tipo:"claro",
+    embed:null,
+    link:"https://www.claro.com.pe/traficoenvivo/",
+    fuente:"Claro 5G"
+  },
+];
+
+// Estado
+let MODELO = null, estado = {}, markers = {}, mapPeru, mapLima, filtroAct = "TODOS";
+
+// ═══════════════════════════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════════════════════════
+function switchTab(t) {
+  document.querySelectorAll(".tab").forEach((el,i) => el.classList.toggle("on",(i===0&&t==="peru")||(i===1&&t==="lima")));
+  document.getElementById("v-peru").classList.toggle("on", t==="peru");
+  document.getElementById("v-lima").classList.toggle("on", t==="lima");
+  if (t==="peru") setTimeout(()=>mapPeru.invalidateSize(),50);
+  if (t==="lima") setTimeout(()=>mapLima.invalidateSize(),50);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FILTROS Y BÚSQUEDA
+// ═══════════════════════════════════════════════════════════════
+function setFiltro(f) {
+  filtroAct = f;
+  document.querySelectorAll(".flt").forEach(b => {
+    b.className = "flt";
+    if (b.textContent.includes("Todos") && f==="TODOS") b.classList.add("on-all");
+    else if (b.textContent.includes("Alto") && f==="ALTO") b.classList.add("on-alto");
+    else if (b.textContent.includes("Medio") && f==="MEDIO") b.classList.add("on-medio");
+    else if (b.textContent.includes("Bajo") && f==="BAJO") b.classList.add("on-bajo");
+  });
+  filtrar();
+}
+
+function filtrar() {
+  const q = (document.getElementById("buscador").value||"").toLowerCase();
+  document.querySelectorAll(".card").forEach(c => {
+    const cod  = (c.dataset.cod||"").toLowerCase();
+    const desc = (c.dataset.desc||"").toLowerCase();
+    const niv  = (c.dataset.niv||"").toUpperCase();
+    const mQ   = !q || cod.includes(q) || desc.includes(q);
+    const mF   = filtroAct==="TODOS" || niv===filtroAct;
+    const show = mQ && mF;
+    c.style.display = show ? "" : "none";
+    if (markers[c.dataset.cod]) {
+      markers[c.dataset.cod].setStyle({ opacity:show?1:.1, fillOpacity:show?.75:.05 });
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARGAR MODELO
+// ═══════════════════════════════════════════════════════════════
+async function cargarModelo() {
+  try {
+    const r = await fetch(MODELO_URL+"?t="+Date.now());
+    MODELO  = await r.json();
+    const m  = MODELO.metadata;
+    const el = document.getElementById("leg-model");
+    if (el && m) el.innerHTML =
+      `Modelo: ${m.modelo_nombre.replace(/^\d+_/,"")}<br>`+
+      `Acc: ${(m.accuracy*100).toFixed(1)}% · F1: ${(m.f1_score*100).toFixed(1)}%`;
+  } catch {
+    MODELO = {
+      metadata:{umbral_alto_score:40,umbral_medio_score:20,modelo_nombre:"Defecto",accuracy:0,f1_score:0},
+      pesos:{lluvia:20,viento:12,baja_vis:18,noche:14,congestion_alta:18,fin_semana:8,feriado:5,frio_extremo:5},
+      gold:[]
+    };
+    document.getElementById("leg-model").textContent = "modelo_export.json no encontrado";
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PREDICCION CON PESOS DEL MODELO
+// ═══════════════════════════════════════════════════════════════
+function predecir(d) {
+  const p  = MODELO?.pesos||{};
+  const th = MODELO?.metadata||{};
+  let s = 0;
+  if (d.lluvia)           s += (p.lluvia||20);
+  if (d.viento)           s += (p.viento||12);
+  if (d.baja_vis)         s += (p.baja_vis||18);
+  if (d.noche)            s += (p.noche||14);
+  if (d.cong > 0.7)       s += (p.congestion_alta||18);
+  if (d.cong > 0.5)       s += Math.round((p.congestion_alta||18)*.3);
+  if (d.finde)            s += (p.fin_semana||8);
+  if (d.feriado)          s += (p.feriado||5);
+  if (d.temp < 5)         s += (p.frio_extremo||5);
+  if (d.lluvia && d.noche) s += Math.round((p.lluvia||20)*.25);
+  return s>=(th.umbral_alto_score||40)?"ALTO":s>=(th.umbral_medio_score||20)?"MEDIO":"BAJO";
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INIT MAPAS
+// ═══════════════════════════════════════════════════════════════
+function initMapas() {
+  // Mapa Perú
+  mapPeru = L.map("map-peru",{zoomControl:false}).setView([-9.19,-75.01],6);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{
+    attribution:"© OSM © CARTO",maxZoom:19
+  }).addTo(mapPeru);
+  L.control.zoom({position:"topleft"}).addTo(mapPeru);
+
+  // Mapa Lima — centrado en Lima Metropolitana
+  mapLima = L.map("map-lima",{zoomControl:false}).setView([-12.046,-77.043],12);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{
+    attribution:"© OSM © CARTO",maxZoom:19
+  }).addTo(mapLima);
+  L.control.zoom({position:"topleft"}).addTo(mapLima);
+
+  // Poner cámaras en mapa Lima
+  CAMARAS.forEach(cam => {
+    const icon = L.divIcon({
+      html:`<div style="background:rgba(255,59,92,.85);border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 0 12px rgba(255,59,92,.6);border:2px solid rgba(255,255,255,.25)">📷</div>`,
+      className:"", iconSize:[26,26], iconAnchor:[13,13]
+    });
+    L.marker([cam.lat,cam.lon],{icon}).addTo(mapLima)
+      .bindPopup(buildCamPopup(cam),{maxWidth:300})
+      .on("click",()=>{ highlightCam(cam.id); });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// POPUP CÁMARA
+// ═══════════════════════════════════════════════════════════════
+function buildCamPopup(cam) {
+  return `<div class="pu">
+    <div class="pu-cod">📷 Cámara ${cam.id}</div>
+    <div class="pu-desc">${cam.nombre}<br>📍 ${cam.dist}, Lima</div>
+    <hr class="pu-div">
+    <div id="embed-${cam.id}" style="border-radius:7px;overflow:hidden;background:#000;aspect-ratio:16/9;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:var(--muted);font-size:11px" onclick="loadEmbed('${cam.id}','${cam.nombre}')">
+      <div style="width:40px;height:40px;border-radius:50%;background:rgba(255,59,92,.8);display:flex;align-items:center;justify-content:center;font-size:18px">▶</div>
+      <span>Clic para cargar stream</span>
+    </div>
+    <div style="margin-top:8px">
+      <a href="https://www.claro.com.pe/traficoenvivo/" target="_blank" style="display:block;text-align:center;padding:8px;background:var(--red-dim);border:1px solid rgba(255,59,92,.3);color:var(--red);border-radius:7px;font-size:11px;font-weight:600">↗ Ver en pantalla completa — Claro.pe</a>
+    </div>
+  </div>`;
+}
+
+function loadEmbed(id, nombre) {
+  const el = document.getElementById("embed-"+id);
+  if (el) el.innerHTML = `<iframe src="https://www.claro.com.pe/traficoenvivo/" style="width:100%;height:160px;border:none;border-radius:7px" allowfullscreen loading="lazy"></iframe>`;
+}
+
+function highlightCam(id) {
+  document.querySelectorAll(".cam-card").forEach(c => c.style.borderColor="");
+  const el = document.getElementById("cc-"+id);
+  if (el) {
+    el.style.borderColor = "var(--red)";
+    el.scrollIntoView({behavior:"smooth",block:"nearest"});
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER PANEL CÁMARAS
+// ═══════════════════════════════════════════════════════════════
+function renderCamaras() {
+  const list = document.getElementById("cam-list");
+  list.innerHTML = "";
+  CAMARAS.forEach(cam => {
+    const puedeEmbed = cam.tipo === "skyline";
+    const div = document.createElement("div");
+    div.className = "cam-card"; div.id = "cc-"+cam.id;
+    div.style.cssText = "background:var(--bg);border:1px solid var(--border);border-radius:9px;overflow:hidden;transition:border-color .15s";
+
+    const badgeColor = puedeEmbed
+      ? "background:var(--grn-dim);border:1px solid rgba(0,230,118,.3);color:var(--green)"
+      : "background:var(--red-dim);border:1px solid rgba(255,59,92,.3);color:var(--red)";
+    const badgeText = puedeEmbed ? "▶ En vivo" : "↗ Ver en Claro";
+
+    div.innerHTML = `
+      <div id="vid-${cam.id}" style="position:relative;height:150px;background:linear-gradient(135deg,#0D1526,#132038);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;cursor:pointer;border-bottom:1px solid var(--border)" onclick="loadPanel('${cam.id}')">
+        <div style="width:44px;height:44px;border-radius:50%;background:${puedeEmbed ? 'rgba(0,230,118,.85)' : 'rgba(255,59,92,.85)'};display:flex;align-items:center;justify-content:center;box-shadow:0 0 18px ${puedeEmbed ? 'rgba(0,230,118,.4)' : 'rgba(255,59,92,.4)'}">
+          <svg width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="${puedeEmbed ? 'M8 5v14l11-7z' : 'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14'}"/></svg>
+        </div>
+        <div style="text-align:center;padding:0 12px">
+          <div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:2px">${cam.nombre}</div>
+          <div style="font-size:10px;color:var(--muted)">${puedeEmbed ? 'Clic para ver stream en vivo' : 'Clic para abrir en Claro.pe'}</div>
+        </div>
+        <div style="position:absolute;top:7px;left:7px;${badgeColor};font-size:8px;font-weight:700;padding:2px 7px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px">${cam.fuente}</div>
+        <div style="position:absolute;top:7px;right:7px;${badgeColor};font-size:8px;font-weight:700;padding:2px 7px;border-radius:10px">${badgeText}</div>
+      </div>
+      <div style="padding:8px 10px">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:6px">📍 ${cam.dist}, Lima</div>
+        <a href="${cam.link}" target="_blank" style="display:block;text-align:center;padding:6px;background:${puedeEmbed ? 'var(--grn-dim)' : 'var(--red-dim)'};border:1px solid ${puedeEmbed ? 'rgba(0,230,118,.3)' : 'rgba(255,59,92,.3)'};color:${puedeEmbed ? 'var(--green)' : 'var(--red)'};border-radius:7px;font-size:10px;font-weight:600;text-decoration:none">↗ Abrir en ${cam.fuente}</a>
+      </div>`;
+    list.appendChild(div);
+  });
+}
+
+function loadPanel(id) {
+  const cam = CAMARAS.find(c => c.id === id);
+  if (!cam) return;
+  const el = document.getElementById("vid-"+id);
+  if (!el) return;
+
+  if (cam.tipo === "skyline" && cam.embed) {
+    // SkylineWebcams SÍ permite embeber
+    el.innerHTML = `<iframe src="${cam.embed}" style="width:100%;height:150px;border:none;display:block" allowfullscreen loading="lazy"></iframe>`;
+    // Resaltar en el mapa
+    highlightCam(id);
+  } else {
+    // Claro y otros que bloquean iframes → abrir en nueva pestaña
+    window.open(cam.link, "_blank");
+    el.innerHTML = `
+      <div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:12px">
+        <div style="font-size:24px">📺</div>
+        <div style="font-size:11px;font-weight:600;color:var(--cyan);text-align:center">Abierto en nueva pestaña</div>
+        <div style="font-size:10px;color:var(--muted);text-align:center;line-height:1.5">${cam.nombre}<br><span style="color:var(--orange)">Claro bloquea embeds externos</span></div>
+        <a href="${cam.link}" target="_blank" style="font-size:10px;color:var(--red);border:1px solid rgba(255,59,92,.3);padding:4px 10px;border-radius:6px;text-decoration:none">Volver a abrir ↗</a>
+      </div>`;
+  }
+}
+
+function highlightCam(id) {
+  document.querySelectorAll(".cam-card").forEach(c => c.style.borderColor="");
+  const el = document.getElementById("cc-"+id);
+  if (el) {
+    el.style.borderColor = "var(--red)";
+    el.scrollIntoView({behavior:"smooth",block:"nearest"});
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER PANEL CÁMARAS
+// ═══════════════════════════════════════════════════════════════
+function renderCamaras() {
+  const list = document.getElementById("cam-list");
+  list.innerHTML = "";
+  CAMARAS.forEach(cam => {
+    const div = document.createElement("div");
+    div.className = "cam-card"; div.id = "cc-"+cam.id;
+    div.innerHTML = `
+      <div class="cam-video" onclick="loadPanel('${cam.id}','${cam.nombre}')">
+        <div class="cam-overlay" id="ov-${cam.id}">
+          <div class="play-btn"><svg width="16" height="16" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <div class="overlay-txt"><div class="overlay-name">${cam.nombre}</div>Clic para cargar stream en vivo</div>
+        </div>
+      </div>
+      <div class="cam-info">
+        <div class="cam-name">${cam.nombre}</div>
+        <div class="cam-dist">📍 ${cam.dist}</div>
+        <div class="cam-badge">Claro 5G</div>
+      </div>`;
+    list.appendChild(div);
+  });
+}
+
+function loadPanel(id, nombre) {
+  const ov = document.getElementById("ov-"+id);
+  if (ov) ov.innerHTML = `<iframe src="https://www.claro.com.pe/traficoenvivo/" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none" allowfullscreen loading="lazy"></iframe>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SIDEBAR CARRETERAS
+// ═══════════════════════════════════════════════════════════════
+function renderSidebar() {
+  const list = document.getElementById("clist");
+  list.innerHTML = "";
+  let cA=0,cM=0,cB=0;
+
+  CARRETERAS.forEach(c => {
+    const d   = estado[c.cod]||{};
+    const niv = d.nivel||"loading";
+    if(niv==="ALTO")cA++; else if(niv==="MEDIO")cM++; else if(niv==="BAJO")cB++;
+
+    const bc = niv==="loading"?"b-load":"b-"+niv;
+    const bt = niv==="loading"?"···":niv;
+
+    const chips=[
+      d.lluvia?"🌧 Lluvia":null,
+      d.viento?"💨 Viento":null,
+      d.baja_vis?"🌫 Niebla":null,
+      d.noche?"🌙 Noche":null,
+    ].filter(Boolean);
+
+    const div = document.createElement("div");
+    div.className = `card ${niv}`;
+    div.id = "c-"+c.cod;
+    div.dataset.cod = c.cod; div.dataset.desc = c.desc; div.dataset.niv = niv;
+    div.innerHTML =
+      `<div class="c-top"><span class="c-cod">${c.cod}</span><span class="badge ${bc}">${bt}</span></div>`+
+      `<div class="c-desc">${c.desc}</div>`+
+      `<div class="c-row">`+
+        `<span>${d.temp!==undefined?d.temp.toFixed(1)+"°C":"–"}</span>`+
+        `<span>${d.viento_kmh!==undefined?d.viento_kmh.toFixed(0)+" km/h":"–"}</span>`+
+        `<span>${d.cong!==undefined?(d.cong*100).toFixed(0)+"% cong.":""}</span>`+
+      `</div>`+
+      (chips.length?`<div class="c-chips">${chips.map(x=>`<span class="chip">${x}</span>`).join("")}</div>`:"");
+
+    div.onclick = () => {
+      document.querySelectorAll(".card").forEach(el=>el.classList.remove("sel"));
+      div.classList.add("sel");
+      if(markers[c.cod]){
+        mapPeru.flyTo([c.lat,c.lon],10,{duration:1});
+        setTimeout(()=>markers[c.cod].openPopup(),1000);
+      }
+    };
+    list.appendChild(div);
+  });
+
+  document.getElementById("cnt-a").textContent = cA;
+  document.getElementById("cnt-m").textContent = cM;
+  document.getElementById("cnt-b").textContent = cB;
+  filtrar();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MARCADORES EN MAPA PERÚ
+// ═══════════════════════════════════════════════════════════════
+function crearMarcador(c, nivel) {
+  const col = COLS[nivel]||COLS["?"];
+  const m = L.circleMarker([c.lat,c.lon],{
+    radius:16, color:col, fillColor:col, fillOpacity:.75, weight:2
+  }).addTo(mapPeru);
+  m.bindPopup(buildPopup(c,nivel),{maxWidth:285});
+  m.bindTooltip(`<b>${c.cod}</b> — ${nivel}`,{direction:"top"});
+  return m;
+}
+
+function buildPopup(c, nivel) {
+  const d    = estado[c.cod]||{};
+  const gold = (MODELO?.gold||[]).find(g=>g.COD_CARRETERA===c.cod);
+  const chips=[
+    d.lluvia?"🌧 Lluvia":"☀️ Despejado",
+    d.viento?"💨 Viento fuerte":null,
+    d.baja_vis?"🌫 Baja visib.":null,
+    d.noche?"🌙 Nocturno":null,
+  ].filter(Boolean);
+
+  // Histórico desde Gold
+  const hist = gold ? `
+    <button class="hist-toggle" onclick="toggleHist('${c.cod}')">📊 Ver histórico ONSV ▾</button>
+    <div class="hist-body" id="hist-${c.cod}">
+      ${[
+        ["Total siniestros", gold.TOTAL_SINIESTROS?.toLocaleString()],
+        ["Prom. fallecidos", (+gold.PROMEDIO_FALLECIDOS||0).toFixed(2)],
+        ["Prom. lesionados", (+gold.PROMEDIO_LESIONADOS||0).toFixed(2)],
+        ["Prom. vehículos",  (+gold.PROMEDIO_VEHICULOS||0).toFixed(2)],
+        ["Prop. con lluvia", ((+gold.PROP_CON_LLUVIA||0)*100).toFixed(1)+"%"],
+        ["Prop. nocturnos",  ((+gold.PROP_NOCTURNOS||0)*100).toFixed(1)+"%"],
+        ["Tasa fatalidad",   (+gold.TASA_FATALIDAD_HISTORICA||0).toFixed(4)],
+      ].map(([k,v])=>`<div class="hist-row"><span class="hist-key">${k}</span><span class="hist-val">${v||"–"}</span></div>`).join("")}
+    </div>` : "";
+
+  return `<div class="pu">
+    <div class="pu-cod">${c.cod}</div>
+    <div class="pu-desc">${c.desc}</div>
+    <div class="pu-nivel pn-${nivel}">Riesgo ${nivel}</div>
+    <div class="pu-grid">
+      <div class="pu-item"><div class="pu-lbl">Temperatura</div><div class="pu-val">${d.temp!==undefined?d.temp.toFixed(1)+"°C":"–"}</div></div>
+      <div class="pu-item"><div class="pu-lbl">Humedad</div><div class="pu-val">${d.humedad!==undefined?d.humedad+"%":"–"}</div></div>
+      <div class="pu-item"><div class="pu-lbl">Viento</div><div class="pu-val">${d.viento_kmh!==undefined?d.viento_kmh.toFixed(0)+" km/h":"–"}</div></div>
+      <div class="pu-item"><div class="pu-lbl">Congestión</div><div class="pu-val">${d.cong!==undefined?(d.cong*100).toFixed(0)+"%":"–"}</div></div>
+    </div>
+    <hr class="pu-div">
+    <div class="pu-sec">Condiciones actuales</div>
+    <div class="pu-chips">${chips.map(x=>`<span class="pu-chip">${x}</span>`).join("")}</div>
+    ${hist}
+  </div>`;
+}
+
+function toggleHist(cod) {
+  const el = document.getElementById("hist-"+cod);
+  if (el) el.classList.toggle("open");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// APIs
+// ═══════════════════════════════════════════════════════════════
+async function fetchClima(lat,lon) {
+  try {
+    const r = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${OW_KEY}&units=metric`);
+    const j = await r.json();
+    return {
+      temp: j.main?.temp??20, humedad: j.main?.humidity??60,
+      viento_kmh: (j.wind?.speed??0)*3.6, vis_m: j.visibility??10000,
+      lluvia: (j.rain?.["1h"]??0)>0||["Rain","Drizzle","Thunderstorm"].includes(j.weather?.[0]?.main),
+    };
+  } catch { return {temp:20,humedad:60,viento_kmh:0,vis_m:10000,lluvia:false}; }
+}
+
+async function fetchTrafico(lat,lon) {
+  try {
+    const r = await fetch(`https://api.tomtom.com/traffic/services/4/flowSegmentData/relative0/10/json?point=${lat},${lon}&key=${TT_KEY}`);
+    const j = await r.json();
+    const fd=j.flowSegmentData, vel=fd?.currentSpeed??60, lib=fd?.freeFlowSpeed??60;
+    return {cong: Math.min(1,Math.max(0,1-vel/lib))};
+  } catch { return {cong:0}; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARGA PRINCIPAL
+// ═══════════════════════════════════════════════════════════════
+async function cargarDatos() {
+  const btn = document.getElementById("btn-ref");
+  btn.disabled=true; btn.textContent="Actualizando...";
+  Object.values(markers).forEach(m=>mapPeru.removeLayer(m));
+  markers={}; estado={};
+  renderSidebar();
+
+  await Promise.all(CARRETERAS.map(async c => {
+    const [cl,tr] = await Promise.all([fetchClima(c.lat,c.lon),fetchTrafico(c.lat,c.lon)]);
+    const h = new Date().getHours();
+    const d = {
+      ...cl, cong:tr.cong,
+      viento: cl.viento_kmh>30, baja_vis: cl.vis_m<1000,
+      noche: h>=18||h<=5,
+      finde: [0,6].includes(new Date().getDay()),
+      feriado: false,
+    };
+    d.nivel = predecir(d);
+    estado[c.cod] = d;
+    markers[c.cod] = crearMarcador(c, d.nivel);
+  }));
+
+  renderSidebar();
+  const now = new Date();
+  const el = document.getElementById("last-upd");
+  el.style.display="block";
+  el.innerHTML = `Actualizado ${now.toLocaleTimeString("es-PE")}`;
+  btn.disabled=false; btn.textContent="↻ Actualizar";
+  toast(`Datos actualizados — ${now.toLocaleTimeString("es-PE")}`);
+}
+
+function toast(msg) {
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"),3000);
+}
+
+setInterval(cargarDatos, 5*60*1000);
+
+// ═══════════════════════════════════════════════════════════════
+// ARRANQUE
+// ═══════════════════════════════════════════════════════════════
+(async()=>{
+  document.getElementById("load-txt").textContent="Inicializando mapas...";
+  initMapas();
+  renderCamaras();
+  document.getElementById("load-txt").textContent="Cargando modelo...";
+  await cargarModelo();
+  document.getElementById("load-txt").textContent="Obteniendo datos en tiempo real...";
+  await cargarDatos();
+  document.getElementById("loading").classList.add("hide");
+})();
+</script>
+</body>
+</html>
